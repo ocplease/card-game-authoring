@@ -1,0 +1,4 @@
+interface:
+  display_name: "Card Game Authoring"
+  short_description: "Create and validate declarative CardPlay game packages."
+  default_prompt: "Create or review a CardPlay game package using declarative JSON deal rules, fixtures, and validation commands."
