@@ -11,7 +11,7 @@ Use it when converting party or card games into CardPlay declarative JSON packag
 - `tests/*.json` validation fixtures
 - Supabase `game_packages` publish/update workflows
 
-## Install
+## Install For Codex
 
 Clone this repository into your Codex skills directory:
 
@@ -27,6 +27,22 @@ git clone https://github.com/ocplease/card-game-authoring.git "$env:USERPROFILE\
 
 Restart Codex or start a new session so the skill list refreshes.
 
+## Install For Claude Code
+
+Clone this repository into your Claude Code skills directory:
+
+```bash
+git clone https://github.com/ocplease/card-game-authoring.git ~/.claude/skills/card-game-authoring
+```
+
+On Windows PowerShell:
+
+```powershell
+git clone https://github.com/ocplease/card-game-authoring.git "$env:USERPROFILE\.claude\skills\card-game-authoring"
+```
+
+Restart Claude Code or start a new session so the skill list refreshes.
+
 ## Use
 
 Ask Codex to use the skill when authoring or reviewing CardPlay game packages:
@@ -40,6 +56,12 @@ Use card-game-authoring to review this deal-rule.json and fixtures.
 ```
 
 The skill should also trigger for requests about CardPlay game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, or publishing packages to Supabase.
+
+In Claude Code, invoke it the same way:
+
+```text
+Use card-game-authoring to create fixtures for a CardPlay game package.
+```
 
 ## Contents
 
