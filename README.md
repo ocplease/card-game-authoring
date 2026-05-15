@@ -1,6 +1,6 @@
 # Card Game Authoring Skill
 
-This agent skill helps AI coding assistants create, review, and validate portable card and party game packages. It is packaged as a standard `SKILL.md` directory and can be installed in tools that support local agent skills, including Codex and Claude Code.
+This agent skill helps AI coding assistants create, review, validate, and publish portable card and party game packages. It is packaged as a standard `SKILL.md` directory and can be installed in tools that support local agent skills, including Codex and Claude Code.
 
 Use it when converting party or card games into declarative JSON packages, including:
 
@@ -10,8 +10,9 @@ Use it when converting party or card games into declarative JSON packages, inclu
 - `deal-rule.json` declarative deal behavior
 - `tests/*.json` validation fixtures
 - fixture-based structural validation
+- direct Supabase publishing when a target table and credentials are provided
 
-The skill is intentionally self-contained. It does not require agents to read any private app repository or copy internal source files.
+The skill is intentionally self-contained. It does not require agents to read any private app repository or copy internal source files. It also tells agents not to write generated games into built-in/source game directories unless explicitly requested.
 
 ## Install For Codex
 
@@ -57,7 +58,11 @@ Use card-game-authoring to create a portable JSON game package for Truth Bomb.
 Use card-game-authoring to review this deal-rule.json and fixtures.
 ```
 
-The skill should also trigger for requests about card game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, or adapting a package to a target game engine.
+```text
+Use card-game-authoring to create a new party game and publish it directly to Supabase. Do not write files into the games directory.
+```
+
+The skill should also trigger for requests about card game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, direct Supabase publishing, or adapting a package to a target game engine.
 
 ## Contents
 
