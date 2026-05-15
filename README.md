@@ -1,6 +1,6 @@
 # Card Game Authoring Skill
 
-This Codex skill helps agents create, review, validate, publish, and update CardPlay game packages.
+This agent skill helps AI coding assistants create, review, validate, publish, and update CardPlay game packages. It is packaged as a standard `SKILL.md` directory and can be installed in tools that support local agent skills, including Codex and Claude Code.
 
 Use it when converting party or card games into CardPlay declarative JSON packages, including:
 
@@ -45,7 +45,7 @@ Restart Claude Code or start a new session so the skill list refreshes.
 
 ## Use
 
-Ask Codex to use the skill when authoring or reviewing CardPlay game packages:
+Ask your agent to use the skill when authoring or reviewing CardPlay game packages:
 
 ```text
 Use card-game-authoring to create a CardPlay package for Truth Bomb.
@@ -57,16 +57,10 @@ Use card-game-authoring to review this deal-rule.json and fixtures.
 
 The skill should also trigger for requests about CardPlay game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, or publishing packages to Supabase.
 
-In Claude Code, invoke it the same way:
-
-```text
-Use card-game-authoring to create fixtures for a CardPlay game package.
-```
-
 ## Contents
 
 - `SKILL.md`: agent-facing workflow and CardPlay authoring rules.
-- `agents/openai.yaml`: UI metadata for Codex skill discovery.
+- `agents/openai.yaml`: optional UI metadata for agents that read OpenAI-style skill metadata.
 
 ## Validate
 
@@ -75,6 +69,8 @@ From this skill directory:
 ```bash
 python ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 ```
+
+If you only have Claude Code installed, use the validator from a local skill-creator skill if available, or validate manually by checking that `SKILL.md` has YAML frontmatter with `name` and `description`.
 
 On Windows PowerShell:
 
