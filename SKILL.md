@@ -1,25 +1,17 @@
 ---
 name: card-game-authoring
-description: Create, review, validate, publish, or update CardPlay game packages. Use when converting a party/card game into CardPlay, defining declarative JSON deal rules, deck sets, player-count variants, round lifecycle behavior, runtime state, fixture tests, or Supabase game package publishing.
+description: Create, review, or validate portable card and party game packages using declarative JSON. Use when converting tabletop, social deduction, role, prompt, number, or custom card games into a self-contained game package with metadata, deck sets, runtime state, deal rules, and fixture tests. Avoids repository-specific assumptions and does not require reading source code from any private app.
 ---
 
 # Card Game Authoring
 
-Author CardPlay games as data. Use declarative JSON packages that the trusted CardPlay engine can validate and execute; do not invent game-specific executable scripts unless the platform later adds an approved escape hatch.
+Create self-contained card game packages that an app or game engine can validate and deal without custom game-specific code. Treat each game as data: metadata, decks, runtime state, deal rules, and fixtures.
 
-## Workflow
+Do not assume access to a private repository. Do not tell the user to copy internal source files. If a target app has its own CLI or schema, adapt this portable contract to that app only after the user provides those public details.
 
-1. Locate the CardPlay repo root. Run commands from there.
-2. Pick the closest existing package template:
+## Output Layout
 
-```text
-packages/games/src/json/who-is-the-spy
-packages/games/src/json/werewolf-role-deal
-packages/games/src/json/king-game
-packages/games/src/json/ito
-```
-
-3. Create or edit one package directory:
+Create one directory per game:
 
 ```text
 my-game/
@@ -30,91 +22,196 @@ my-game/
     main.json
   tests/
     4-players.json
-    8-players.json
 ```
 
-4. Validate the package before calling it done.
-5. Publish only after validation passes and the Supabase status/version plan is clear.
+Use stable lowercase URL-safe IDs such as `truth-bomb`, `spy-words`, or `number-ranking`.
 
-## Required Files
+## Authoring Workflow
 
-- `game.json`: identity, name, description, player limits, `rulesText`, `aiContext`, deck set references, runtime schema reference, deal rule reference, and optional `coverImageUrl`.
-- `decksets/*.json`: reusable or consumable card/content resources.
-- `runtime-state.schema.json`: only persistent fields the engine must carry across rounds.
-- `deal-rule.json`: declarative instructions for assigning cards to players.
-- `tests/*.json`: fixture cases for supported player counts, asymmetric deals, default card faces, and cross-round behavior.
+1. Explain the real-world rules in plain language.
+2. Identify what each player receives at deal time.
+3. Decide whether every player receives the same number of cards.
+4. Decide whether role/card mixes change by player count.
+5. Decide whether decks are reusable or consumable across rounds.
+6. Define the smallest runtime state needed for cross-round memory.
+7. Write the JSON files.
+8. Add fixtures for minimum, maximum, and high-risk player counts.
+9. Validate by checking references, counts, visibility, and fixture expectations.
 
-Minimal `game.json`:
+## `game.json`
+
+Purpose: game identity, picker metadata, player limits, player-facing rules, and references to package files.
+
+Required fields:
+
+- `id`: stable URL-safe identifier.
+- `name`: display name.
+- `description`: short picker/summary text.
+- `minPlayers`: minimum player count.
+- `maxPlayers`: maximum player count.
+- `rulesText`: concise player-facing rules.
+- `aiContext`: boundaries and rules for an assistant explaining the game.
+- `deckSetIds`: IDs of deck sets used by the game.
+- `runtimeStateSchema`: usually `"runtime-state.schema.json"`.
+- `deal`: usually `"deal-rule.json"`.
+
+Optional fields:
+
+- `estimatedMinutes`: approximate round/game length.
+- `ageRating`: simple label such as `"8+"` or `"13+"`.
+- `coverImageUrl`: real reachable image URL for game pickers.
+
+Example:
 
 ```json
 {
-  "id": "my-game",
-  "name": "My Game",
-  "description": "Short picker description.",
+  "id": "truth-bomb",
+  "name": "Truth Bomb",
+  "description": "Players receive secret prompts and reveal answers together.",
   "minPlayers": 3,
-  "maxPlayers": 8,
-  "rulesText": "Player-facing rules text.",
-  "aiContext": "Rules assistant boundaries for this game.",
-  "deckSetIds": ["main"],
+  "maxPlayers": 10,
+  "rulesText": "Each player receives one hidden prompt. Take turns answering honestly or passing. Start a new round for fresh prompts.",
+  "aiContext": "Explain only the rules and prompt flow. Do not invent scoring unless the user asks for a variant.",
+  "deckSetIds": ["prompts"],
   "runtimeStateSchema": "runtime-state.schema.json",
   "deal": "deal-rule.json",
-  "estimatedMinutes": 10,
-  "ageRating": "8+"
+  "estimatedMinutes": 15,
+  "ageRating": "13+"
 }
 ```
 
-Add `coverImageUrl` only when it is a real reachable image URL. The web game picker displays it first.
+## Deck Sets
+
+Purpose: define cards, roles, words, numbers, prompts, or other dealable content.
+
+Required deck set fields:
+
+- `id`: must match `game.json.deckSetIds` and deal-rule references.
+- `name`: display name.
+- `lifecycle`: `"reusable"` or `"consumable"`.
+- `cards`: array of card/content objects.
+
+Common card fields:
+
+- `id`: stable unique ID within the deck set.
+- `name`: display text.
+- `description`: optional explanation.
+- `metadata`: optional structured data, such as word pairs.
+- `imageUrl`: optional real reachable image URL for visual cards.
+- `shareable`: optional boolean for cards intentionally shared across players.
+
+Reusable roles:
+
+```json
+{
+  "id": "roles",
+  "name": "Roles",
+  "lifecycle": "reusable",
+  "cards": [
+    { "id": "villager", "name": "Villager", "description": "Find the hidden threat." },
+    { "id": "seer", "name": "Seer", "description": "Receives special information by table rules." },
+    { "id": "werewolf", "name": "Werewolf", "description": "Stay hidden from the village." }
+  ]
+}
+```
+
+Consumable word pairs:
+
+```json
+{
+  "id": "word-pairs",
+  "name": "Word Pairs",
+  "lifecycle": "consumable",
+  "cards": [
+    {
+      "id": "apple-pear",
+      "name": "Apple / Pear",
+      "metadata": { "commonWord": "Apple", "spyWord": "Pear" }
+    }
+  ]
+}
+```
+
+Do not put private/public visibility on cards. Visibility belongs to the dealt assignment through `defaultFace`.
+
+## Runtime State Schema
+
+Purpose: declare cross-round fields the engine may persist.
+
+Use the smallest set possible. Common fields:
+
+- `roundNumber`: current round index.
+- `usedCardIds`: consumed cards already used.
+- `lastSpecialPlayerId`: previous special-role target, such as previous king.
+
+Minimal reusable game:
+
+```json
+{
+  "fields": {
+    "roundNumber": { "type": "number", "default": 0 }
+  }
+}
+```
+
+Consumable content:
+
+```json
+{
+  "fields": {
+    "roundNumber": { "type": "number", "default": 0 },
+    "usedCardIds": { "type": "array", "items": "string", "default": [] }
+  }
+}
+```
 
 ## Deal Rules
 
-Every `deal-rule.json` must answer:
+Purpose: define how cards are assigned to players.
+
+Every deal rule must answer:
 
 1. How many cards does each player receive?
-2. Does the distribution or role mix change by player count?
-3. Are cards reused, consumed, rotated, or excluded after use?
+2. Does distribution change by player count?
+3. Are cards reused or consumed across rounds?
+4. Does each dealt card start face up or face down?
 
-Supported `pattern` values:
+Required visibility rule:
 
-- `one_card_each`: every player receives one card from the same deck.
-- `multi_card_each`: every player receives multiple card types, such as one private number plus one shared visible topic.
-- `role_distribution_by_player_count`: exact role/card mix changes by player count.
-- `spy_word_pair`: most players receive one common word and spies receive a related word.
-- `asymmetric_assignments`: different players receive different counts or card types.
+- Every dealt card assignment must include `defaultFace: "up"` or `defaultFace: "down"`.
+- Use `"down"` for secrets: roles, hidden words, numbers, identities, or private prompts.
+- Use `"up"` only when the table should immediately see the card.
 
-Supported `roundLifecycle` values:
+Supported patterns:
 
-- `reusable`: cards can appear again next round.
-- `consume_one_per_round`: one deck item is used per round and excluded from later rounds through runtime state.
+- `one_card_each`
+- `multi_card_each`
+- `role_distribution_by_player_count`
+- `spy_word_pair`
+- `asymmetric_assignments`
 
-## Deal Rule Requirements
+Supported lifecycle values:
 
-- Include `defaultFace: "up" | "down"` on every dealt card assignment.
-- Use `defaultFace: "down"` for hidden roles, words, numbers, identities, or private instructions.
-- Use `defaultFace: "up"` only when a card should start visible to the table.
-- Do not add `private`, `public`, or other visibility flags to card definitions. Visibility belongs to the dealt assignment.
-- Use equal card counts only when every player truly receives the same number of cards.
-- Use asymmetric assignments when players receive different card counts or different card types.
-- Define player-count variants for every supported count where the role/card mix changes.
-- Use `lifecycle: "reusable"` deck sets for repeatable roles, numbers, or cards.
-- Use `lifecycle: "consumable"` deck sets for prompts, word pairs, questions, or content that should not repeat across rounds.
-- Keep runtime state minimal. Add fields like `roundNumber`, `usedCardIds`, or `lastKingPlayerId` only when the deal rule needs them.
-- Use `imageUrl` for visual cards when available; otherwise provide clear `name` and `description`.
+- `reusable`
+- `consume_one_per_round`
 
-## Pattern Examples
+### `one_card_each`
 
-One hidden card each:
+Use when every player gets one hidden card from the same deck.
 
 ```json
 {
   "pattern": "one_card_each",
-  "deckSetId": "numbers",
+  "deckSetId": "prompts",
   "selection": { "mode": "shuffle", "count": "player_count" },
   "defaultFace": "down",
   "roundLifecycle": "reusable"
 }
 ```
 
-Multiple cards per player with a shared visible card:
+### `multi_card_each`
+
+Use when every player receives the same structure of multiple cards.
 
 ```json
 {
@@ -136,25 +233,35 @@ Multiple cards per player with a shared visible card:
 }
 ```
 
-Player-count role variants:
+### `role_distribution_by_player_count`
+
+Use when role/card mix changes by player count.
 
 ```json
 {
   "pattern": "role_distribution_by_player_count",
   "deckSetId": "roles",
   "variants": {
+    "5": [
+      { "cardId": "werewolf", "count": 1, "defaultFace": "down" },
+      { "cardId": "seer", "count": 1, "defaultFace": "down" },
+      { "cardId": "villager", "count": 3, "defaultFace": "down" }
+    ],
     "8": [
       { "cardId": "werewolf", "count": 2, "defaultFace": "down" },
       { "cardId": "seer", "count": 1, "defaultFace": "down" },
-      { "cardId": "doctor", "count": 1, "defaultFace": "down" },
-      { "cardId": "villager", "count": 4, "defaultFace": "down" }
+      { "cardId": "villager", "count": 5, "defaultFace": "down" }
     ]
   },
   "roundLifecycle": "reusable"
 }
 ```
 
-Consumable word pair:
+For each variant, the sum of `count` values must equal the player count.
+
+### `spy_word_pair`
+
+Use when most players receive one word and spies receive a related different word.
 
 ```json
 {
@@ -173,21 +280,25 @@ Consumable word pair:
 }
 ```
 
-Asymmetric card counts:
+The referenced deck cards must contain the metadata fields named in `assignments`.
+
+### `asymmetric_assignments`
+
+Use when one player or group receives a different number/type of cards.
 
 ```json
 {
   "pattern": "asymmetric_assignments",
   "selector": {
-    "target": "king_player",
+    "target": "leader_player",
     "mode": "random_except_previous",
-    "runtimeStateField": "lastKingPlayerId"
+    "runtimeStateField": "lastSpecialPlayerId"
   },
   "assignments": [
     {
-      "target": "king_player",
+      "target": "leader_player",
       "cards": [
-        { "deckSetId": "king-cards", "count": 1, "defaultFace": "up" },
+        { "deckSetId": "leader-cards", "count": 1, "defaultFace": "up" },
         { "deckSetId": "number-cards", "count": 1, "defaultFace": "down" }
       ]
     },
@@ -199,23 +310,34 @@ Asymmetric card counts:
     }
   ],
   "roundLifecycle": "reusable",
-  "runtimeState": ["lastKingPlayerId", "roundNumber"]
+  "runtimeState": ["lastSpecialPlayerId", "roundNumber"]
 }
 ```
 
-## Fixture Coverage
+Supported selector modes:
 
-Add fixtures that prove the real deal risks:
+- `random`: choose any eligible target.
+- `random_except_previous`: avoid the previous target when possible; requires `runtimeStateField`.
 
-- Minimum supported player count.
-- Maximum supported player count.
-- Every player-count variant with a different role/card mix.
-- Multi-card games with expected per-player counts and mixed visibility.
-- Asymmetric games, including which player receives extra cards.
-- Face-up and face-down expectations.
-- Cross-round behavior for consumed content or rotating roles.
+## Fixtures
 
-Fixture examples:
+Purpose: prove the package deals correctly.
+
+Each fixture should include:
+
+- `name`
+- `playerCount`
+- `expected`
+
+Recommended expected fields:
+
+- `cardsPerPlayer`: array of expected card counts.
+- `hasMixedVisibility`: true when both up and down cards are expected.
+- `faces`: optional list of expected `defaultFace` values.
+- `usesDeckSetIds`: optional deck set IDs expected in the deal.
+- `consumesCard`: true when a round should mark content as used.
+
+Minimum fixture:
 
 ```json
 {
@@ -227,9 +349,11 @@ Fixture examples:
 }
 ```
 
+Asymmetric fixture:
+
 ```json
 {
-  "name": "king round",
+  "name": "leader gets an extra visible card",
   "playerCount": 4,
   "expected": {
     "cardsPerPlayer": [1, 1, 1, 2],
@@ -238,64 +362,30 @@ Fixture examples:
 }
 ```
 
-## Commands
+## Manual Validation Checklist
 
-Validate built-ins:
+Use this checklist even when no validator CLI exists:
 
-```bash
-npm run validate:games
-```
-
-Validate one authored package:
-
-```bash
-npx tsx packages/game-authoring/src/cli.ts <package-dir>
-```
-
-Expected valid-package output:
-
-```text
-validated 1 game package(s)
-```
-
-Publish draft or published rows:
-
-```bash
-npx tsx packages/game-authoring/src/publish-cli.ts <package-dir>
-npx tsx packages/game-authoring/src/publish-cli.ts <package-dir> --publish
-npx tsx packages/game-authoring/src/publish-cli.ts <package-dir> --upsert
-npx tsx packages/game-authoring/src/publish-cli.ts <package-dir> --publish --upsert
-```
-
-Publishing requires:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-```
-
-Set `HTTP_PROXY` and `HTTPS_PROXY` when the network requires a proxy.
-
-## Publishing Rules
-
-- The publish CLI validates first, then writes into `game_packages`.
-- Without `--upsert`, insert fails if the row already exists.
-- With `--upsert`, update the row whose `id` matches `<slug>@1`.
-- Current CLI limitation: publishing uses `version: 1`; there is no `--version` flag or automatic archive/publish rotation.
-- Published packages appear in `/api/games` only when row `status` is `published`.
-- For a published update, validate locally, run `publish-cli.ts <package-dir> --publish --upsert`, read the row back, and execute stored `deal_rule` against representative player counts.
-- Do not hand-edit `game_packages.game`, `deck_sets`, `runtime_state_schema`, or `deal_rule` unless copying from a locally validated package.
-
-## Completion Checklist
-
-- `game.json` IDs match `deckSetIds`.
+- `game.json.id` is stable and URL-safe.
+- `game.json.deckSetIds` exactly match `decksets/*.json` IDs.
 - Every deck set referenced by `deal-rule.json` exists.
+- Every referenced `cardId` exists in the referenced deck set.
 - Every dealt card assignment has `defaultFace`.
-- The chosen pattern preserves required randomness and card structure.
-- Fixtures cover every supported player count or every distinct variant.
-- Cross-round state is declared in `runtime-state.schema.json`.
-- `npx tsx packages/game-authoring/src/cli.ts <package-dir>` passes.
-- If publishing, Supabase env vars are set and the row status/version plan is clear.
-- For published updates, database readback confirms stored rows execute as expected.
+- Player counts stay within `minPlayers` and `maxPlayers`.
+- For role variants, each variant total equals its player count.
+- Equal-card patterns are used only when every player truly receives the same structure.
+- Asymmetric patterns are used when players receive different counts/types.
+- Consumable content declares state such as `usedCardIds`.
+- Runtime state schema declares every field named by `deal-rule.json.runtimeState`.
+- Fixtures cover minimum, maximum, and each distinct variant/risk.
 
-The package is not complete until schema validation and fixture tests pass.
+## Adapting To A Target App
+
+If the user has a specific app or engine:
+
+1. Ask for its public schema, validator, or import format if it differs from this contract.
+2. Map this package contract to the target format.
+3. Keep the source package self-contained so it can be reviewed without private code.
+4. Do not include secrets, service-role keys, internal database names, private paths, or unpublished repository details.
+
+If a target app provides a validator, run it and report exact pass/fail output. If no validator exists, use the manual checklist and clearly say validation was structural/manual.

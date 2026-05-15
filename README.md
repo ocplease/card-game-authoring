@@ -1,15 +1,17 @@
 # Card Game Authoring Skill
 
-This agent skill helps AI coding assistants create, review, validate, publish, and update CardPlay game packages. It is packaged as a standard `SKILL.md` directory and can be installed in tools that support local agent skills, including Codex and Claude Code.
+This agent skill helps AI coding assistants create, review, and validate portable card and party game packages. It is packaged as a standard `SKILL.md` directory and can be installed in tools that support local agent skills, including Codex and Claude Code.
 
-Use it when converting party or card games into CardPlay declarative JSON packages, including:
+Use it when converting party or card games into declarative JSON packages, including:
 
 - `game.json` metadata and rules text
 - `decksets/*.json` card/content resources
 - `runtime-state.schema.json` cross-round state
 - `deal-rule.json` declarative deal behavior
 - `tests/*.json` validation fixtures
-- Supabase `game_packages` publish/update workflows
+- fixture-based structural validation
+
+The skill is intentionally self-contained. It does not require agents to read any private app repository or copy internal source files.
 
 ## Install For Codex
 
@@ -45,21 +47,21 @@ Restart Claude Code or start a new session so the skill list refreshes.
 
 ## Use
 
-Ask your agent to use the skill when authoring or reviewing CardPlay game packages:
+Ask your agent to use the skill when authoring or reviewing card game packages:
 
 ```text
-Use card-game-authoring to create a CardPlay package for Truth Bomb.
+Use card-game-authoring to create a portable JSON game package for Truth Bomb.
 ```
 
 ```text
 Use card-game-authoring to review this deal-rule.json and fixtures.
 ```
 
-The skill should also trigger for requests about CardPlay game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, or publishing packages to Supabase.
+The skill should also trigger for requests about card game package authoring, declarative deal rules, deck sets, player-count variants, runtime state, fixtures, or adapting a package to a target game engine.
 
 ## Contents
 
-- `SKILL.md`: agent-facing workflow and CardPlay authoring rules.
+- `SKILL.md`: agent-facing workflow and portable card game package contract.
 - `agents/openai.yaml`: optional UI metadata for agents that read OpenAI-style skill metadata.
 
 ## Validate
