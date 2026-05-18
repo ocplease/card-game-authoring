@@ -1,6 +1,6 @@
 ---
 name: card-game-authoring
-description: Create, review, validate, or publish portable card and party game packages using declarative JSON. Use when converting tabletop, social deduction, role, prompt, number, or custom card games into a self-contained game package with metadata, deck sets, runtime state, deal rules, and fixture tests, including direct Supabase publishing when credentials and schema are provided. Avoids repository-specific assumptions and does not require reading source code from any private app.
+description: Create, review, validate, submit, approve, or publish portable card and party game packages using declarative JSON. Use when converting tabletop, social deduction, role, prompt, number, or custom card games into a self-contained game package with metadata, deck sets, runtime state, deal rules, and fixture tests, including approval-based submission without service-role credentials or direct Supabase publishing when maintainer credentials and schema are provided. Avoids repository-specific assumptions and does not require reading source code from any private app.
 ---
 
 # Card Game Authoring
@@ -15,7 +15,8 @@ Hard rule: do not write generated games into an app's built-in/source game direc
 
 Choose the safest mode for the user's request:
 
-- **Direct Supabase publish:** Build the package payload in memory, validate it structurally, then insert or upsert into Supabase. Use this when the user asks to create a game directly in Supabase or says not to write source files.
+- **Approval-based submission:** Build and validate the package, then submit it to the target app's submission API with a low-privilege submit token. Use this when agents should not receive a Supabase service-role key. The server should validate again before inserting and store valid submissions as `pending_approval`.
+- **Direct Supabase publish:** Build the package payload in memory, validate it structurally, then insert or upsert into Supabase with maintainer/server credentials. Use this only when the user asks to publish directly or provides an authorized server-side credential.
 - **JSON payload:** Return the complete package JSON objects in the response or a neutral export file outside app source directories. Use this when the user wants reviewable artifacts but has not provided database credentials.
 - **Temporary validation workspace:** If a validator requires files, write only to a temporary/staging directory outside built-in game source directories, then delete or clearly identify the temporary files.
 - **Source fallback files:** Only write into a game's source repository when the user explicitly requests source-controlled fallback packages.
@@ -47,9 +48,10 @@ Use stable lowercase URL-safe IDs such as `truth-bomb`, `spy-words`, or `number-
 4. Decide whether role/card mixes change by player count.
 5. Decide whether decks are reusable or consumable across rounds.
 6. Define the smallest runtime state needed for cross-round memory.
-7. Produce the package as an in-memory payload, response payload, database row, or neutral export directory according to the delivery mode.
+7. Produce the package as an in-memory payload, response payload, approval submission, database row, or neutral export directory according to the delivery mode.
 8. Add fixtures for minimum, maximum, and high-risk player counts.
 9. Validate by checking references, counts, visibility, and fixture expectations.
+10. If submitting or publishing, ensure validation runs before any database insert. If validation fails, return the exact errors so the package can be improved and resubmitted.
 
 ## `game.json`
 
@@ -64,6 +66,7 @@ Required fields:
 - `maxPlayers`: maximum player count.
 - `rulesText`: concise player-facing rules.
 - `aiContext`: boundaries and rules for an assistant explaining the game.
+- `language`: primary language of the package content, usually one of the target app's supported language codes such as `"en"`, `"ja"`, or `"zh"`.
 - `deckSetIds`: IDs of deck sets used by the game.
 - `runtimeStateSchema`: usually `"runtime-state.schema.json"`.
 - `deal`: usually `"deal-rule.json"`.
@@ -85,6 +88,7 @@ Example:
   "maxPlayers": 10,
   "rulesText": "Each player receives one hidden prompt. Take turns answering honestly or passing. Start a new round for fresh prompts.",
   "aiContext": "Explain only the rules and prompt flow. Do not invent scoring unless the user asks for a variant.",
+  "language": "en",
   "deckSetIds": ["prompts"],
   "runtimeStateSchema": "runtime-state.schema.json",
   "deal": "deal-rule.json",
@@ -381,6 +385,7 @@ Use this checklist even when no validator CLI exists:
 
 - `game.json.id` is stable and URL-safe.
 - `game.json.deckSetIds` exactly match `decksets/*.json` IDs.
+- `game.json.language` is present when the target app ranks or filters games by language, and uses a supported language code.
 - Every deck set referenced by `deal-rule.json` exists.
 - Every referenced `cardId` exists in the referenced deck set.
 - Every dealt card assignment has `defaultFace`.
@@ -394,7 +399,63 @@ Use this checklist even when no validator CLI exists:
 
 ## Direct Supabase Publish
 
-Use this mode only when the user asks to publish directly or provides a target Supabase contract. Do not ask the agent to write the game into source-controlled game directories first.
+Use this mode only when the user asks to publish directly or provides a target Supabase contract. Do not ask the agent to write the game into source-controlled game directories first. Prefer approval-based submission when untrusted or external agents need to create games without maintainer credentials.
+
+## Approval-Based Submission
+
+Use this mode when agents should be able to create game packages without receiving the Supabase service-role key.
+
+Expected flow:
+
+1. Generate the package payload.
+2. Validate locally with the available validator or the manual checklist.
+3. Submit to the target app's submission endpoint with a low-privilege submit token, not a service-role key.
+4. The server validates the same package again before any insert.
+5. If validation fails, the server returns a structured error response and creates no database row.
+6. If validation passes, the server inserts the row as `pending_approval`.
+7. A maintainer later approves the pending row with service-role credentials; approval should revalidate the stored row, archive any currently published row for the same slug, then mark the selected row as `published`.
+
+CardPlay-compatible submission command:
+
+```bash
+CARDPLAY_GAME_SUBMIT_TOKEN=... npx tsx packages/game-authoring/src/submit-cli.ts path/to/my-game --url https://your-cardplay-app.example
+```
+
+CardPlay-compatible validation failure response:
+
+```json
+{
+  "error": "Game package validation failed",
+  "validation": {
+    "valid": false,
+    "checkedGames": ["my-game"],
+    "errors": ["deal rule references missing deck set prompts"]
+  }
+}
+```
+
+CardPlay-compatible success response:
+
+```json
+{
+  "id": "my-game@2",
+  "slug": "my-game",
+  "version": 2,
+  "status": "pending_approval",
+  "checksum": "<sha256>"
+}
+```
+
+Maintainer approval commands, when the target app exposes them:
+
+```bash
+npx tsx packages/game-authoring/src/publish-cli.ts --list-pending
+npx tsx packages/game-authoring/src/publish-cli.ts --approve my-game@2
+```
+
+Pending approval packages should not appear in public game lists or become playable until approval changes their status to `published`.
+
+## Direct Supabase Publish Details
 
 Required inputs:
 
@@ -418,7 +479,7 @@ create table game_packages (
   id text primary key,
   slug text not null,
   version integer not null,
-  status text not null check (status in ('draft', 'published', 'archived')),
+  status text not null check (status in ('draft', 'pending_approval', 'published', 'archived')),
   image_url text,
   game jsonb not null,
   deck_sets jsonb not null,
@@ -433,14 +494,14 @@ create table game_packages (
 );
 ```
 
-Recommended row payload:
+Recommended pending submission row payload:
 
 ```json
 {
   "id": "truth-bomb@1",
   "slug": "truth-bomb",
   "version": 1,
-  "status": "draft",
+  "status": "pending_approval",
   "image_url": null,
   "game": {},
   "deck_sets": [],
@@ -452,7 +513,7 @@ Recommended row payload:
 }
 ```
 
-Create `checksum` from a stable JSON serialization of `game`, `deck_sets`, `runtime_state_schema`, `deal_rule`, and `fixtures`. If stable serialization tooling is unavailable, still publish only after manual validation, and include a validation report that says the checksum method used.
+Create `checksum` from a stable JSON serialization of `game`, `deck_sets`, `runtime_state_schema`, `deal_rule`, and `fixtures`. If stable serialization tooling is unavailable, still submit or publish only after manual validation, and include a validation report that says the checksum method used.
 
 Minimal JavaScript publish shape:
 
@@ -490,11 +551,13 @@ const { error } = await supabase.from("game_packages").upsert(row, { onConflict:
 if (error) throw error;
 ```
 
-After publishing:
+Before direct insert or upsert, run the available validator. If it fails, stop and report the validation errors; do not create a row. Direct publishing should generally use `draft` or `published`; approval submission should use `pending_approval`.
+
+After publishing or submitting:
 
 - Read the row back by `id`.
 - Confirm `status`, `checksum`, and JSON columns match the intended payload.
-- If the app exposes a game-list API, verify the game appears only when `status` is `published`.
+- If the app exposes a game-list API, verify the game appears only when `status` is `published`; `pending_approval`, `draft`, and `archived` rows must stay hidden.
 - Report the row ID, status, checksum, and validation result. Do not report secrets.
 
 ## Adapting To A Target App
