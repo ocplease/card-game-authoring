@@ -1,6 +1,6 @@
 ---
 name: card-game-authoring
-description: Create, review, validate, submit, approve, or publish portable card and party game packages using declarative JSON. Use when converting tabletop, social deduction, role, prompt, number, or custom card games into a self-contained game package with metadata, deck sets, runtime state, deal rules, and fixture tests, including approval-based submission without service-role credentials or direct Supabase publishing when maintainer credentials and schema are provided. Avoids repository-specific assumptions and does not require reading source code from any private app.
+description: Create, review, validate, submit, approve, or publish portable card and party game packages using declarative JSON. Use when converting tabletop, social deduction, role, prompt, number, or custom card games into a self-contained game package with metadata, deck sets, runtime state, deal rules, and fixture tests, especially approval-based submission without service-role credentials. Avoids repository-specific assumptions and does not require reading source code from any private app.
 ---
 
 # Card Game Authoring
@@ -9,14 +9,13 @@ Create self-contained card game packages that an app or game engine can validate
 
 Do not assume access to a private repository. Do not tell the user to copy internal source files. If a target app has its own CLI or schema, adapt this portable contract to that app only after the user provides those public details.
 
-Hard rule: do not write generated games into an app's built-in/source game directory, such as `games/`, `packages/games/`, `src/games/`, or similar source-controlled fallback directories, unless the user explicitly asks for source-code fallback files. Prefer direct publishing to the target database or return a self-contained JSON payload.
+Hard rule: do not write generated games into an app's built-in/source game directory, such as `games/`, `packages/games/`, `src/games/`, or similar source-controlled fallback directories, unless the user explicitly asks for source-code fallback files. Prefer approval-based submission to the target app or return a self-contained JSON payload.
 
 ## Delivery Modes
 
 Choose the safest mode for the user's request:
 
 - **Approval-based submission:** Build and validate the package, then submit it to the target app's submission API with a low-privilege submit token. Use this when agents should not receive a Supabase service-role key. The server should validate again before inserting and store valid submissions as `pending_approval`.
-- **Direct Supabase publish:** Build the package payload in memory, validate it structurally, then insert or upsert into Supabase with maintainer/server credentials. Use this only when the user asks to publish directly or provides an authorized server-side credential.
 - **JSON payload:** Return the complete package JSON objects in the response or a neutral export file outside app source directories. Use this when the user wants reviewable artifacts but has not provided database credentials.
 - **Temporary validation workspace:** If a validator requires files, write only to a temporary/staging directory outside built-in game source directories, then delete or clearly identify the temporary files.
 - **Source fallback files:** Only write into a game's source repository when the user explicitly requests source-controlled fallback packages.
@@ -397,9 +396,16 @@ Use this checklist even when no validator CLI exists:
 - Runtime state schema declares every field named by `deal-rule.json.runtimeState`.
 - Fixtures cover minimum, maximum, and each distinct variant/risk.
 
-## Direct Supabase Publish
+## Supabase-Only Submission
 
-Use this mode only when the user asks to publish directly or provides a target Supabase contract. Do not ask the agent to write the game into source-controlled game directories first. Prefer approval-based submission when untrusted or external agents need to create games without maintainer credentials.
+When the user says "Supabase only", "do not add to the repo", or similar, treat this as a hard boundary:
+
+1. Create the game package in a temporary/staging directory outside source-controlled built-in game directories.
+2. Validate that temporary package before any network request.
+3. Submit through the target app's approval submission endpoint with a low-privilege token.
+4. Confirm the server stored the package as `pending_approval`.
+5. Check `git status` or otherwise confirm no repo files were changed.
+6. Report the pending row id, status, checksum, validation result, and any issues encountered. Do not report secrets.
 
 ## Approval-Based Submission
 
@@ -455,22 +461,18 @@ npx tsx packages/game-authoring/src/publish-cli.ts --approve my-game@2
 
 Pending approval packages should not appear in public game lists or become playable until approval changes their status to `published`.
 
-## Direct Supabase Publish Details
+## Maintainer Approval Details
 
-Required inputs:
+Direct agent insert/upsert into `game_packages` should be disabled for CardPlay-style workflows. Agents submit packages as `pending_approval`; a maintainer-only approval command or service later revalidates the stored row, archives the currently published row for the same slug, and marks the selected pending version as `published`.
 
-- Supabase URL.
-- Supabase service-role key or another server-side credential authorized to write the target table.
-- Target table name, defaulting to `game_packages` if the user's app uses this contract.
-- Whether to insert as `draft` or `published`.
-- Whether to insert only or upsert an existing package.
-
-Never print or commit credentials. Use environment variables when possible:
+Maintainer approval may require server credentials such as:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+Never print or commit credentials.
 
 Recommended table contract:
 
@@ -515,7 +517,7 @@ Recommended pending submission row payload:
 
 Create `checksum` from a stable JSON serialization of `game`, `deck_sets`, `runtime_state_schema`, `deal_rule`, and `fixtures`. If stable serialization tooling is unavailable, still submit or publish only after manual validation, and include a validation report that says the checksum method used.
 
-Minimal JavaScript publish shape:
+Minimal JavaScript row shape for server-side approval implementations:
 
 ```js
 import { createHash } from "node:crypto";
@@ -533,7 +535,7 @@ const row = {
   id: `${game.id}@1`,
   slug: game.id,
   version: 1,
-  status: "draft",
+  status: "pending_approval",
   image_url: game.coverImageUrl ?? null,
   game,
   deck_sets,
@@ -546,12 +548,22 @@ const row = {
   published_at: null
 };
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const { error } = await supabase.from("game_packages").upsert(row, { onConflict: "id" });
-if (error) throw error;
+// The approval service should write pending rows or approve existing pending rows.
+// Do not expose this credential to game-authoring agents.
 ```
 
-Before direct insert or upsert, run the available validator. If it fails, stop and report the validation errors; do not create a row. Direct publishing should generally use `draft` or `published`; approval submission should use `pending_approval`.
+Before inserting a pending row or approving one, run the available validator. If it fails, stop and report the validation errors; do not create or publish a row.
+
+### Submission Troubleshooting
+
+Record and report the problems encountered during submission, even after the final upload succeeds. This makes the run reproducible for maintainers and future agents.
+
+Common issues and fixes:
+
+- **Accidentally started writing to a built-in/source game directory:** stop, remove only the files/directories created for this attempt, confirm the worktree is clean, then recreate the package in a temporary directory.
+- **Submit token not visible in the shell:** look for project-local env files only when appropriate, load `CARDPLAY_GAME_SUBMIT_TOKEN` into the process without printing it, and never commit env files.
+- **Submission endpoint returns validation errors:** print the validation errors and do not retry unchanged payloads.
+- **HTML instead of JSON:** verify the app URL is the application host, not the Supabase project URL, then retry the submission endpoint.
 
 After publishing or submitting:
 
@@ -566,7 +578,7 @@ If the user has a specific app or engine:
 
 1. Ask for its public schema, validator, or import format if it differs from this contract.
 2. Map this package contract to the target format.
-3. Prefer direct database publishing or a self-contained JSON payload over source fallback files.
+3. Prefer approval-based submission or a self-contained JSON payload over source fallback files.
 4. Do not include secrets, service-role keys, internal database names, private paths, or unpublished repository details.
 
 If a target app provides a validator, run it and report exact pass/fail output. If no validator exists, use the manual checklist and clearly say validation was structural/manual.
